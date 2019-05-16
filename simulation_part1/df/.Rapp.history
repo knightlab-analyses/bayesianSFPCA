@@ -1,0 +1,842 @@
+library(parallel)#
+library(rstan)#
+library(loo) # for waic()#
+library(Matrix) # for bdiag(): construct a block diagnoal matrix#
+options(mc.cores = parallel::detectCores())
+load("post_rotation_results.RData")#
+vars_select = c('ID', 'patient', 'time', 'response', 'Version') # selected variables from prepared_data$data#
+#
+ALPHA_array = alpha_new#
+MU_array = theta_mu_new#
+THETA_array = Theta_new#
+phi_t_cont = results_basis$orth_spline_basis_cont#
+phi_t = results_basis$orth_spline_basis_sparse#
+time_cont = results_basis$time_cont#
+#
+nloop=dim(ALPHA_array)[3]#
+first=1#
+last=nloop#
+# N = prepared_data$num_subjects#
+#
+MU_mean = MU_array[, first] #mean function across sampling sessions#
+ALPHA_mean = ALPHA_array[,,first] # mean factor scores#
+THETA_mean = THETA_array[,,first] # mean factor loading#
+#
+for(iter in 2:nloop){#
+	MU_mean = MU_mean + MU_array[, iter]#
+	ALPHA_mean = ALPHA_mean + ALPHA_array[,,iter]#
+	THETA_mean = THETA_mean + THETA_array[,,iter]#
+}#
+#
+MU_mean=cbind(MU_mean/(last-first+1))#
+ALPHA_mean=cbind(ALPHA_mean/(last-first+1))#
+THETA_mean=cbind(THETA_mean/(last-first+1))#
+#
+Mu_functions = t(bdiag(cbind(phi_t_cont)))%*%MU_mean#
+FPC_mean=t(phi_t_cont)%*%THETA_mean#
+### create data frame containing needed information #####
+df = prepared_data$data[, vars_select]#
+Y_sparse = list()#
+time_sparse = list()#
+scores = data.frame(t(ALPHA_mean)) #
+names(scores)=c("fpc1","fpc2")#
+df$fpc1=0 # principle component scores#
+df$fpc2=0#
+#
+i = 0#
+for (pid in unique(df$ID)){#
+	i = i + 1#
+	Y_sparse[[i]] = df$response[df$ID == pid]#
+	time_sparse[[i]] = df$time[df$ID == pid]#
+	df$fpc1[df$ID == pid] = scores[i, 1]#
+	df$fpc2[df$ID == pid] = scores[i, 2]#
+}#
+#
+Fits_sparse=list()#
+for(i in 1:N){#
+	Fits_sparse[[i]] = t(phi_t[[i]]) %*% MU_mean + t(phi_t[[i]]) %*% THETA_mean %*% ALPHA_mean[, i]#
+}#
+#
+df$Y_sparse = unlist(Y_sparse) # check: sum(df$Y_sparse != df$response) == 0#
+df$Fits_sparse = unlist(Fits_sparse)#
+df$residuals = df$Y_sparse - df$Fits_sparse#
+df$residuals = df$Y_sparse - df$Fits_sparse#
+#
+# export resulted data ##
+write.table(df, 'data_sfpca.txt', sep='\t', row.names=F)#
+#
+## residual analysis ###
+pdf('residual_plots.pdf')#
+par(mfrow=c(1,2))#
+plot(df$residuals)#
+library(car); qqPlot(df$residuals)#
+dev.off()
+pdf('FPCs.pdf', width=5, height=8)#
+plot(time_cont, FPC_mean[, 1], type="l", lwd=2, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.2, col='red')#
+lines(time_cont, FPC_mean[, 2],type="l",lwd=1, col='blue')#
+title(main=paste("FPCs for", "response"))#
+legend('topright', c('PC1', 'PC2'), lwd=c(3, 3), col=c('red', 'blue'), bty='n')#
+dev.off()
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=2, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.2, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=1, col='blue')#
+title(main=paste("FPCs for", "response"))#
+legend('topright', c('PC1', 'PC2'), lwd=c(3, 3), col=c('red', 'blue'), bty='n')
+pdf('FPCs.pdf', width=5, height=8)#
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=2, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.2, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=1, col='blue')#
+title(main=paste("FPCs for", "response"))#
+legend('topright', c('PC1', 'PC2'), lwd=c(3, 3), col=c('red', 'blue'), bty='n')#
+dev.off()
+pdf('FPCs.pdf', width=5, height=8)#
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=2, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.2, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=2, col='blue')#
+title(main=paste("FPCs for", "response"))#
+legend('topright', c('PC1', 'PC2'), lwd=c(3, 3), col=c('red', 'blue'), bty='n')#
+dev.off()
+library(ggpubr)#
+library(gridExtra)#
+pdf('fpcScores_ggBoxplot.pdf', width=10, height=8)#
+### p-values based on Wilcoxon test#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons) +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))  # Add pairwise comparisons p-value#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons) +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()#
+#
+# scatterplot of PC scores#
+ggplot(df, aes(x=fpc1 , y=fpc2)) + geom_point() + #
+aes(colour=factor(Version)) + theme(legend.position="top") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))#
+ggsave('scatterplot_scores.pdf', width=6, height=5)
+getwd()
+quit()
+load("post_rotation_results.RData")#
+vars_select = c('ID', 'patient', 'time', 'response', 'Version') # selected variables from prepared_data$data#
+#
+ALPHA_array = alpha_new#
+MU_array = theta_mu_new#
+THETA_array = Theta_new#
+phi_t_cont = results_basis$orth_spline_basis_cont#
+phi_t = results_basis$orth_spline_basis_sparse#
+time_cont = results_basis$time_cont#
+#
+nloop=dim(ALPHA_array)[3]#
+first=1#
+last=nloop#
+# N = prepared_data$num_subjects#
+#
+MU_mean = MU_array[, first] #mean function across sampling sessions#
+ALPHA_mean = ALPHA_array[,,first] # mean factor scores#
+THETA_mean = THETA_array[,,first] # mean factor loading#
+#
+for(iter in 2:nloop){#
+	MU_mean = MU_mean + MU_array[, iter]#
+	ALPHA_mean = ALPHA_mean + ALPHA_array[,,iter]#
+	THETA_mean = THETA_mean + THETA_array[,,iter]#
+}#
+#
+MU_mean=cbind(MU_mean/(last-first+1))#
+ALPHA_mean=cbind(ALPHA_mean/(last-first+1))#
+THETA_mean=cbind(THETA_mean/(last-first+1))#
+#
+Mu_functions = t(bdiag(cbind(phi_t_cont)))%*%MU_mean#
+FPC_mean=t(phi_t_cont)%*%THETA_mean#
+### create data frame containing needed information #####
+df = prepared_data$data[, vars_select]#
+Y_sparse = list()#
+time_sparse = list()#
+scores = data.frame(t(ALPHA_mean)) #
+names(scores)=c("fpc1","fpc2")#
+df$fpc1=0 # principle component scores#
+df$fpc2=0#
+#
+i = 0#
+for (pid in unique(df$ID)){#
+	i = i + 1#
+	Y_sparse[[i]] = df$response[df$ID == pid]#
+	time_sparse[[i]] = df$time[df$ID == pid]#
+	df$fpc1[df$ID == pid] = scores[i, 1]#
+	df$fpc2[df$ID == pid] = scores[i, 2]#
+}#
+#
+Fits_sparse=list()#
+for(i in 1:N){#
+	Fits_sparse[[i]] = t(phi_t[[i]]) %*% MU_mean + t(phi_t[[i]]) %*% THETA_mean %*% ALPHA_mean[, i]#
+}#
+#
+df$Y_sparse = unlist(Y_sparse) # check: sum(df$Y_sparse != df$response) == 0#
+df$Fits_sparse = unlist(Fits_sparse)#
+df$residuals = df$Y_sparse - df$Fits_sparse#
+df$residuals = df$Y_sparse - df$Fits_sparse
+library(parallel)#
+library(rstan)#
+library(loo) # for waic()#
+library(Matrix) # for bdiag(): construct a block diagnoal matrix#
+options(mc.cores = parallel::detectCores())
+load("post_rotation_results.RData")#
+vars_select = c('ID', 'patient', 'time', 'response', 'Version') # selected variables from prepared_data$data#
+#
+ALPHA_array = alpha_new#
+MU_array = theta_mu_new#
+THETA_array = Theta_new#
+phi_t_cont = results_basis$orth_spline_basis_cont#
+phi_t = results_basis$orth_spline_basis_sparse#
+time_cont = results_basis$time_cont#
+#
+nloop=dim(ALPHA_array)[3]#
+first=1#
+last=nloop#
+# N = prepared_data$num_subjects#
+#
+MU_mean = MU_array[, first] #mean function across sampling sessions#
+ALPHA_mean = ALPHA_array[,,first] # mean factor scores#
+THETA_mean = THETA_array[,,first] # mean factor loading#
+#
+for(iter in 2:nloop){#
+	MU_mean = MU_mean + MU_array[, iter]#
+	ALPHA_mean = ALPHA_mean + ALPHA_array[,,iter]#
+	THETA_mean = THETA_mean + THETA_array[,,iter]#
+}#
+#
+MU_mean=cbind(MU_mean/(last-first+1))#
+ALPHA_mean=cbind(ALPHA_mean/(last-first+1))#
+THETA_mean=cbind(THETA_mean/(last-first+1))#
+#
+Mu_functions = t(bdiag(cbind(phi_t_cont)))%*%MU_mean#
+FPC_mean=t(phi_t_cont)%*%THETA_mean#
+### create data frame containing needed information #####
+df = prepared_data$data[, vars_select]#
+Y_sparse = list()#
+time_sparse = list()#
+scores = data.frame(t(ALPHA_mean)) #
+names(scores)=c("fpc1","fpc2")#
+df$fpc1=0 # principle component scores#
+df$fpc2=0#
+#
+i = 0#
+for (pid in unique(df$ID)){#
+	i = i + 1#
+	Y_sparse[[i]] = df$response[df$ID == pid]#
+	time_sparse[[i]] = df$time[df$ID == pid]#
+	df$fpc1[df$ID == pid] = scores[i, 1]#
+	df$fpc2[df$ID == pid] = scores[i, 2]#
+}#
+#
+Fits_sparse=list()#
+for(i in 1:N){#
+	Fits_sparse[[i]] = t(phi_t[[i]]) %*% MU_mean + t(phi_t[[i]]) %*% THETA_mean %*% ALPHA_mean[, i]#
+}#
+#
+df$Y_sparse = unlist(Y_sparse) # check: sum(df$Y_sparse != df$response) == 0#
+df$Fits_sparse = unlist(Fits_sparse)#
+df$residuals = df$Y_sparse - df$Fits_sparse#
+df$residuals = df$Y_sparse - df$Fits_sparse
+library(ggpubr)#
+library(gridExtra)#
+pdf('fpcScores_ggBoxplot.pdf', width=10, height=8)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test"#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))  # Add pairwise comparisons p-value#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+library(ggpubr)#
+library(gridExtra)#
+pdf('fpcScores_ggBoxplot.pdf', width=10, height=8)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))  # Add pairwise comparisons p-value#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+ggplot(df, aes(x=fpc1 , y=fpc2)) + geom_point() + #
+aes(colour=factor(Version)) + theme(legend.position="top") +#
+scale_color_manual(values=colpal) +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"))#
+ggsave('scatterplot_scores.pdf', width=6, height=5)
+library(parallel)#
+library(rstan)#
+library(loo) # for waic()#
+library(Matrix) # for bdiag(): construct a block diagnoal matrix#
+options(mc.cores = parallel::detectCores())#
+df=read.csv("df_bound.txt",header=TRUE, sep='\t')
+head(df)
+table(df$Version)
+library(splinectomeR)#
+result = permuspliner(data=df, xvar='time', yvar='response', cases='patient',#
+	                  category='Version', groups = c('baseline','shift_4x'), perms = 999, retain_perm = T)
+permuspliner.plot.permsplines(result, xvar = 'time', yvar = 'response')
+ggsave('SplineR_GroupDiff_base4x_df.pdf')
+table(df$groups)
+table(df$Version)
+result = permuspliner(data=df, xvar='time', yvar='response', cases='patient',#
+	                  category='Version', groups = c('baseline','shift_1x'), perms = 999, retain_perm = T)
+permuspliner.plot.permsplines(result, xvar = 'time', yvar = 'response')#
+ggsave('SplineR_GroupDiff_base1x_df.pdf')
+result = permuspliner(data=df, xvar='time', yvar='response', cases='patient',#
+	                  category='Version', groups = c('baseline','shift_2x'), perms = 999, retain_perm = T)#
+permuspliner.plot.permsplines(result, xvar = 'time', yvar = 'response')#
+ggsave('SplineR_GroupDiff_base2x_df.pdf')
+load("post_rotation_results.RData")#
+vars_select = c('ID', 'patient', 'time', 'response', 'Version') # selected variables from prepared_data$data#
+#
+ALPHA_array = alpha_new#
+MU_array = theta_mu_new#
+THETA_array = Theta_new#
+phi_t_cont = results_basis$orth_spline_basis_cont#
+phi_t = results_basis$orth_spline_basis_sparse#
+time_cont = results_basis$time_cont#
+#
+nloop=dim(ALPHA_array)[3]#
+first=1#
+last=nloop#
+# N = prepared_data$num_subjects#
+#
+MU_mean = MU_array[, first] #mean function across sampling sessions#
+ALPHA_mean = ALPHA_array[,,first] # mean factor scores#
+THETA_mean = THETA_array[,,first] # mean factor loading#
+#
+for(iter in 2:nloop){#
+	MU_mean = MU_mean + MU_array[, iter]#
+	ALPHA_mean = ALPHA_mean + ALPHA_array[,,iter]#
+	THETA_mean = THETA_mean + THETA_array[,,iter]#
+}#
+#
+MU_mean=cbind(MU_mean/(last-first+1))#
+ALPHA_mean=cbind(ALPHA_mean/(last-first+1))#
+THETA_mean=cbind(THETA_mean/(last-first+1))#
+#
+Mu_functions = t(bdiag(cbind(phi_t_cont)))%*%MU_mean#
+FPC_mean=t(phi_t_cont)%*%THETA_mean#
+### create data frame containing needed information #####
+df = prepared_data$data[, vars_select]#
+Y_sparse = list()#
+time_sparse = list()#
+scores = data.frame(t(ALPHA_mean)) #
+names(scores)=c("fpc1","fpc2")#
+df$fpc1=0 # principle component scores#
+df$fpc2=0#
+#
+i = 0#
+for (pid in unique(df$ID)){#
+	i = i + 1#
+	Y_sparse[[i]] = df$response[df$ID == pid]#
+	time_sparse[[i]] = df$time[df$ID == pid]#
+	df$fpc1[df$ID == pid] = scores[i, 1]#
+	df$fpc2[df$ID == pid] = scores[i, 2]#
+}#
+#
+Fits_sparse=list()#
+for(i in 1:N){#
+	Fits_sparse[[i]] = t(phi_t[[i]]) %*% MU_mean + t(phi_t[[i]]) %*% THETA_mean %*% ALPHA_mean[, i]#
+}#
+#
+df$Y_sparse = unlist(Y_sparse) # check: sum(df$Y_sparse != df$response) == 0#
+df$Fits_sparse = unlist(Fits_sparse)#
+df$residuals = df$Y_sparse - df$Fits_sparse#
+df$residuals = df$Y_sparse - df$Fits_sparse
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=3, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.5, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=3, col='blue')#
+title(main=paste("FPCs for", "response"))
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=3, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.3, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=3, col='blue')#
+title(main=paste("FPCs for", "response"))
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=3, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.3, cex.axis = 1.2, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=3, col='blue')#
+title(main=paste("FPCs for", "response"))#
+legend('topright', c('PC1', 'PC2'), lwd=c(3, 3), col=c('red', 'blue'), bty='n')
+pdf('FPCs.pdf', width=5, height=8)#
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=3, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.3, cex.axis = 1.2, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=3, col='blue')#
+title(main=paste("FPCs for", "response"))#
+legend('topright', c('PC1', 'PC2'), lwd=c(3, 3), col=c('red', 'blue'), bty='n')#
+dev.off()
+library(ggpubr)#
+library(gridExtra)
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)
+library(ggpubr)#
+library(gridExtra)#
+pdf('fpcScores_ggBoxplot.pdf', width=10, height=8)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+pdf('FPCs_wide.pdf', width=8, height=5)#
+plot(time_cont*22, FPC_mean[, 1], type="l", lwd=3, ylim=c(min(unlist(Y_sparse)), max(unlist(Y_sparse))),#
+     xlab='time', ylab='PC Curve Values', cex.lab=1.3, cex.axis = 1.2, col='red')#
+lines(time_cont*22, FPC_mean[, 2],type="l",lwd=3, col='blue')#
+title(main=paste("FPCs for", "response"))#
+legend('topright', c('PC1', 'PC2'), lwd=c(3, 3), col=c('red', 'blue'), bty='n')#
+dev.off()
+pdf('fpcScores_ggBoxplot.pdf', width = 4, height = 3, dpi=600)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+getwd()
+pdf('fpcScores_ggBoxplot.pdf', width = 4, height = 3, dpi=600)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+pdf('fpcScores_ggBoxplot.pdf', width = 4, height = 3)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+pdf('fpcScores_ggBoxplot.pdf', width = 5, height = 4)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+pdf('fpcScores_ggBoxplot.pdf', width = 6, height = 5)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+pdf('fpcScores_ggBoxplot.pdf', width = 7, height = 5)#
+### p-values based on T test (same as from simple linear regression)#
+compare_means(fpc1 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot1 = ggboxplot(df, x = "Version", y = "fpc1",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") + # Add pairwise comparisons p-value#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+#
+compare_means(fpc2 ~ Version,  data = df, method = "t.test")#
+my_comparisons <- list(c("baseline", "shift_1x"), c("baseline", "shift_2x"),#
+	                   c("baseline", "shift_4x"))#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+plot2 = ggboxplot(df, x = "Version", y = "fpc2",#
+          color = "Version", palette = colpal)+ #
+stat_compare_means(comparisons = my_comparisons, method = "t.test") +#
+theme(text = element_text(size=12), #
+	  axis.title.x = element_text(size=18, face="bold"),#
+      axis.title.y = element_text(size=18, face="bold"),#
+      axis.text.x = element_text(face="bold", size=10),#
+	  axis.text.y = element_text(face="bold", size=10))#
+grid.arrange(plot1, plot2, ncol=2)#
+dev.off()
+library(splinectomeR) #
+require(ggplot2)#
+require(reshape2)#
+#
+df=read.csv("df_bound.txt",header=TRUE, sep='\t')#
+result1 = permuspliner(data=df, xvar='time', yvar='response', cases='patient',#
+                    category='Version', groups = c('baseline','shift_1x'), perms = 999, retain_perm = T)#
+result2 = permuspliner(data=df, xvar='time', yvar='response', cases='patient',#
+                    category='Version', groups = c('baseline','shift_2x'), perms = 999, retain_perm = T)#
+result4 = permuspliner(data=df, xvar='time', yvar='response', cases='patient',#
+                    category='Version', groups = c('baseline','shift_4x'), perms = 999, retain_perm = T)#
+#
+est_bs = result4['v1_interpolated'][[1]] # baseline (x = time, var1 = estimated baseline values)#
+est_bs$group = as.character(result4['category_1'][[1]])#
+est_s4 = result4['v2_interpolated'][[1]] # shift_x (x = time, var2 = estimated shift_x values)#
+est_s4$group = as.character(result4['category_2'][[1]])#
+est_s1 = result1['v2_interpolated'][[1]] #
+est_s1$group = as.character(result1['category_2'][[1]])#
+est_s2 = result2['v2_interpolated'][[1]] #
+est_s2$group = as.character(result2['category_2'][[1]])#
+colnames(est_bs)[1] = colnames(est_s4)[1] = colnames(est_s1)[1] = colnames(est_s2)[1] = 'time'#
+colnames(est_bs)[2] = colnames(est_s4)[2] = colnames(est_s1)[2] = colnames(est_s2)[2]= 'response' #
+est_data = rbind(est_bs, est_s1, est_s2, est_s4)#
+#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+ggplot() + geom_line(data=est_data, aes(x=time, y=response, color=factor(est_data$group)), size=1.2) +#
+scale_color_manual(values=colpal) + labs(colour= "Version") +#
+theme_classic() + theme(axis.text = element_text(color='black')) + #
+geom_point(data=df, aes(x=time, y=response, color=Version))#
+ggsave('splinectome_df_curves.pdf', width = 4, height = 3, dpi=600)
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+ggplot() + geom_line(data=est_data, aes(x=time, y=response, color=factor(est_data$group)), size=1.2) +#
+scale_color_manual(values=colpal) + labs(colour= "Version") +#
+theme_classic() + theme(axis.text = element_text(color='black')) + #
+geom_point(data=df, aes(x=time, y=response, color=Version), alpha=0.5, size=1.2)#
+ggsave('splinectome_df_curves.pdf', width = 4, height = 3, dpi=600)
+load("post_rotation_results.RData")#
+vars_select = c('ID', 'patient', 'time', 'response', 'Version') # selected variables from prepared_data$data#
+#
+ALPHA_array = alpha_new#
+MU_array = theta_mu_new#
+THETA_array = Theta_new#
+phi_t_cont = results_basis$orth_spline_basis_cont#
+phi_t = results_basis$orth_spline_basis_sparse#
+time_cont = results_basis$time_cont#
+#
+nloop=dim(ALPHA_array)[3]#
+first=1#
+last=nloop#
+# N = prepared_data$num_subjects#
+#
+MU_mean = MU_array[, first] #mean function across sampling sessions#
+ALPHA_mean = ALPHA_array[,,first] # mean factor scores#
+THETA_mean = THETA_array[,,first] # mean factor loading#
+#
+for(iter in 2:nloop){#
+	MU_mean = MU_mean + MU_array[, iter]#
+	ALPHA_mean = ALPHA_mean + ALPHA_array[,,iter]#
+	THETA_mean = THETA_mean + THETA_array[,,iter]#
+}#
+#
+MU_mean=cbind(MU_mean/(last-first+1))#
+ALPHA_mean=cbind(ALPHA_mean/(last-first+1))#
+THETA_mean=cbind(THETA_mean/(last-first+1))#
+#
+Mu_functions = t(bdiag(cbind(phi_t_cont)))%*%MU_mean#
+FPC_mean=t(phi_t_cont)%*%THETA_mean#
+### create data frame containing needed information #####
+df = prepared_data$data[, vars_select]#
+Y_sparse = list()#
+time_sparse = list()#
+scores = data.frame(t(ALPHA_mean)) #
+names(scores)=c("fpc1","fpc2")#
+df$fpc1=0 # principle component scores#
+df$fpc2=0#
+#
+i = 0#
+for (pid in unique(df$ID)){#
+	i = i + 1#
+	Y_sparse[[i]] = df$response[df$ID == pid]#
+	time_sparse[[i]] = df$time[df$ID == pid]#
+	df$fpc1[df$ID == pid] = scores[i, 1]#
+	df$fpc2[df$ID == pid] = scores[i, 2]#
+}#
+#
+Fits_sparse=list()#
+for(i in 1:N){#
+	Fits_sparse[[i]] = t(phi_t[[i]]) %*% MU_mean + t(phi_t[[i]]) %*% THETA_mean %*% ALPHA_mean[, i]#
+}#
+#
+df$Y_sparse = unlist(Y_sparse) # check: sum(df$Y_sparse != df$response) == 0#
+df$Fits_sparse = unlist(Fits_sparse)#
+df$residuals = df$Y_sparse - df$Fits_sparse#
+df$residuals = df$Y_sparse - df$Fits_sparse
+library(matrix)
+library(Matrix)
+load("post_rotation_results.RData")#
+vars_select = c('ID', 'patient', 'time', 'response', 'Version') # selected variables from prepared_data$data#
+#
+ALPHA_array = alpha_new#
+MU_array = theta_mu_new#
+THETA_array = Theta_new#
+phi_t_cont = results_basis$orth_spline_basis_cont#
+phi_t = results_basis$orth_spline_basis_sparse#
+time_cont = results_basis$time_cont#
+#
+nloop=dim(ALPHA_array)[3]#
+first=1#
+last=nloop#
+# N = prepared_data$num_subjects#
+#
+MU_mean = MU_array[, first] #mean function across sampling sessions#
+ALPHA_mean = ALPHA_array[,,first] # mean factor scores#
+THETA_mean = THETA_array[,,first] # mean factor loading#
+#
+for(iter in 2:nloop){#
+	MU_mean = MU_mean + MU_array[, iter]#
+	ALPHA_mean = ALPHA_mean + ALPHA_array[,,iter]#
+	THETA_mean = THETA_mean + THETA_array[,,iter]#
+}#
+#
+MU_mean=cbind(MU_mean/(last-first+1))#
+ALPHA_mean=cbind(ALPHA_mean/(last-first+1))#
+THETA_mean=cbind(THETA_mean/(last-first+1))#
+#
+Mu_functions = t(bdiag(cbind(phi_t_cont)))%*%MU_mean#
+FPC_mean=t(phi_t_cont)%*%THETA_mean#
+### create data frame containing needed information #####
+df = prepared_data$data[, vars_select]#
+Y_sparse = list()#
+time_sparse = list()#
+scores = data.frame(t(ALPHA_mean)) #
+names(scores)=c("fpc1","fpc2")#
+df$fpc1=0 # principle component scores#
+df$fpc2=0#
+#
+i = 0#
+for (pid in unique(df$ID)){#
+	i = i + 1#
+	Y_sparse[[i]] = df$response[df$ID == pid]#
+	time_sparse[[i]] = df$time[df$ID == pid]#
+	df$fpc1[df$ID == pid] = scores[i, 1]#
+	df$fpc2[df$ID == pid] = scores[i, 2]#
+}#
+#
+Fits_sparse=list()#
+for(i in 1:N){#
+	Fits_sparse[[i]] = t(phi_t[[i]]) %*% MU_mean + t(phi_t[[i]]) %*% THETA_mean %*% ALPHA_mean[, i]#
+}#
+#
+df$Y_sparse = unlist(Y_sparse) # check: sum(df$Y_sparse != df$response) == 0#
+df$Fits_sparse = unlist(Fits_sparse)#
+df$residuals = df$Y_sparse - df$Fits_sparse#
+df$residuals = df$Y_sparse - df$Fits_sparse
+library(ggplot2)#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+ggplot(df, aes(x=time*22, y=Fits_sparse, color=Version)) + geom_point(alpha=0) + # use alpha=0 #
+xlab("Observation Time Point") + ylab("Smoothed Response") + scale_color_manual(values=colpal)+#
+theme_classic() + theme(axis.text = element_text(color='black')) + #
+geom_smooth(se=FALSE, size=1, aes(group=Version)) +#
+geom_point(data=df, aes(x=time*22, y=response, color=Version), alpha=0.5, size=1.2)
+head(df)
+data = read.csv("df_bound.txt",header=TRUE, sep='\t')
+head(data)
+sigma_y = sd(data$response)#
+mu_y = mean(data$response)
+sigma_y
+mu_y
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+ggplot(df, aes(x=time*22, y=Fits_sparse*sigma_y + mu_y, color=Version)) + geom_point(alpha=0) + # use alpha=0 #
+xlab("Observation Time Point") + ylab("Smoothed Response") + scale_color_manual(values=colpal)+#
+theme_classic() + theme(axis.text = element_text(color='black')) + #
+geom_smooth(se=FALSE, size=1, aes(group=Version)) +#
+geom_point(data=df, aes(x=time*22, y=response*sigma_y + mu_y, color=Version), alpha=0.5, size=1.2)
+library(ggplot2)#
+colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")#
+ggplot(df, aes(x=time*22, y=Fits_sparse*sigma_y + mu_y, color=Version)) + geom_point(alpha=0) + # use alpha=0 #
+xlab("Observation Time Point") + ylab("Smoothed Response") + scale_color_manual(values=colpal)+#
+theme_classic() + theme(axis.text = element_text(color='black')) + #
+geom_smooth(se=FALSE, size=1, aes(group=Version)) +#
+geom_point(data=df, aes(x=time*22, y=response*sigma_y + mu_y, color=Version), alpha=0.5, size=1.2) #
+ggsave('Smoothed_spaghetti_groups_orignalScale.pdf', width = 4, height = 3, dpi=600)
