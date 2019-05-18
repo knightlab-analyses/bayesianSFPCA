@@ -1,7 +1,6 @@
-### simulation setting for splinectomeR ####library(ggplot2)
+### simulation setting for splinectomeR ####
 library(ggplot2)
 library(reshape2)
-#library(splinectomeR)
 
 colpal <- c("#E69F00", "#56B4E9", "#009E73", "#CC79A7")
 
@@ -45,19 +44,7 @@ dfm5$response <- dfm2$response + (dfm2$response * (shifter/5))
 dfm5$Version <- 'shift_4x'; dfm5$patient <- paste(dfm5$patient, '4x', sep = '_')
 
 dfm_bound <- rbind(dfm2, dfm3, dfm4, dfm5)
-
-dfm_loess <- ggplot(dfm_bound) + geom_smooth(aes(x=time, y=response, color=Version), se = F, method = 'loess') +
-  geom_point(aes(x=time, y=response, color=Version), alpha=0.5, size=1.2) +
-  theme_classic() + theme(axis.text = element_text(color='black')) +
-  scale_color_manual(values=colpal)
-ggsave(dfm_loess, filename = 'FigXA_dfmloess.pdf', width = 4, height = 3, dpi=600)
-
-dfm_lm <- ggplot(dfm_bound) + geom_smooth(aes(x=time, y=response, color=Version), se = F, method = 'lm') +
-  geom_point(aes(x=time, y=response, color=Version), alpha=0.5, size=1.2) +
-  theme_classic() + theme(axis.text = element_text(color='black')) +
-  scale_color_manual(values=colpal)
-ggsave(dfm_lm, filename = 'FigXA_dfmlm.pdf', width = 4, height = 3, dpi=600)
-write.table(dfm_bound, 'dfm_bound.txt', sep='\t', row.names=F)
+write.table(dfm_bound, 'dfm/dfm_bound.txt', sep='\t', row.names=F)
 
 
 #### Setting II: An early and late divergence ####
@@ -77,16 +64,4 @@ df5$response <- df2$response + (df2$response * (shifter2/5))
 df5$Version <- 'shift_4x'; df5$patient <- paste(df5$patient, '4x', sep = '_')
 
 df_bound <- rbind(df2, df3, df4, df5)
-
-df_loess <- ggplot(df_bound) + geom_smooth(aes(x=time, y=response, color=Version), se = F, method = 'loess') +
-  geom_point(aes(x=time, y=response, color=Version), alpha=0.5, size=1.2) +
-  theme_classic() + theme(axis.text = element_text(color='black')) +
-  scale_color_manual(values=colpal)
-ggsave(df_loess, filename = 'FigXB_df_loess.pdf', width = 4, height = 3, dpi=600)
-
-df_lm <- ggplot(df_bound) + geom_smooth(aes(x=time, y=response, color=Version), se = F, method = 'lm') +
-  geom_point(aes(x=time, y=response, color=Version), alpha=0.5, size=1.2) +
-  theme_classic() + theme(axis.text = element_text(color='black')) +
-  scale_color_manual(values=colpal)
-ggsave(df_lm, filename = 'FigXB_df_lm.pdf', width = 4, height = 3, dpi=600)
-write.table(df_bound, 'df_bound.txt', sep='\t', row.names=F)
+write.table(df_bound, 'df/df_bound.txt', sep='\t', row.names=F)
