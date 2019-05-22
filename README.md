@@ -7,6 +7,7 @@ parallel(v.3.4.3), rstan(v.2.18.2), loo(v.2.0.0.9000), Matrix(v.1.2.14), ggplot2
 
 #### Reproduce results for simulation I 
 simulate single and double region pertrubed data (datsim_splinectomeR.R)
+
 results on simulated single region perturbed data (dfm_singleRegion)
 * observed data (sfpca_dfm.R; Observed_spaghetti_group.pdf as Figure 1a; Observed_patient3.pdf as Figure 2a;
 Observed_patient5.pdf as Figure 2b
