@@ -1,7 +1,6 @@
 # bayesianSFPCA
 #### R code for the manuscript of Bayesian SFPCA 
 
-***
 ### required R packages: 
 parallel(v.3.4.3), rstan(v.2.18.2), loo(v.2.0.0.9000), Matrix(v.1.2.14), ggplot2(v.3.1.0), splines(v.3.4.3), bayesplot(v.1.6.0)
 
@@ -128,3 +127,46 @@ Figure 6d (Mean_trueVsestimated.pdf);
 Figure 6e (FPCs_trueVsestimated.pdf);
 
 Figure 6f (fpcScores_scatterplots.pdf)
+
+***
+#### Reproduce results for ECAM data application
+* Observed data (Shannon_modelSelection.R)
+
+Figure 7a: Observed_spaghetti.pdf
+
+Figure 7b: Observed_shannon_abx.pdf
+
+Figure 7c: Observed_shannon_delivery.pdf
+
+Figure 7d: Observed_shannon_diet.pdf
+
+* Results from splinectomeR (figure_splinectome.R)
+
+Figure 7e: splinectome_delivery_curves.pdf
+
+Figure 7f: splinectome_diet_curves.pdf
+
+* Results from Bayesian SFPCA (model selection: Shannon_modelSelection.R + model fitting: sn_3pc_1n.R)
+
+Figure 8a: mean_spaghetti_transform.pdf
+
+Figure 8b: FPCs_mean_PC1.pdf
+
+Figure 8c: FPCs_mean_PC2.pdf
+
+Figure 8d: FPCs_mean_PC3.pdf
+
+Figure 9a: boxplot_abx_PC3_scores.pdf
+
+Figure 9b: boxplot_delivery_PC1_scores.pdf
+
+Figure 9c: boxplot_delivery_PC2_scores.pdf
+
+Figure 9d: boxplot_diet_PC1_scores.pdf
+
+Figure 9e: boxplot_diet_PC2_scores.pdf
+
+Figure 9f: boxplot_diet_PC3_scores.pdf
+
+
+
