@@ -4,6 +4,7 @@
 ### required R packages: 
 parallel(v.3.4.3), rstan(v.2.18.2), loo(v.2.0.0.9000), Matrix(v.1.2.14), ggplot2(v.3.1.0), splines(v.3.4.3), bayesplot(v.1.6.0)
 
+***
 #### Reproduce results for simulation I 
 simulate single and double region pertrubed data (datsim_splinectomeR.R)
 
@@ -49,6 +50,7 @@ boxplot_PC1_scores.pdf as Figure 3e;
 
 boxplot_PC2_scores.pdf as Figure 3f
 
+***
 #### Reproduce results for simulation II
 * simulated data with 100 total samples and 0 % missing values (N100_M0)
 
