@@ -39,7 +39,7 @@ results on simulated double region perturbed data (df_doubleRegion)
   - Observed_patient8.pdf as Figure 3b
 * results from using splinectomeR (figure_spline.R) 
 
-splinectome_df_curves.pdf as Figure 1d)
+  - splinectome_df_curves.pdf as Figure 1d)
 * results from applying Bayesian SFPCA (sfpca_df.R)
 
   - FPCs_mean_PC1.pdf as Figure 3c; 
@@ -169,6 +169,3 @@ splinectome_df_curves.pdf as Figure 1d)
   - Figure 9e: boxplot_diet_PC2_scores.pdf
 
   - Figure 9f: boxplot_diet_PC3_scores.pdf
-
-
-
