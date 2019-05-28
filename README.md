@@ -11,11 +11,11 @@ simulate single and double region pertrubed data (datsim_splinectomeR.R)
 results on simulated single region perturbed data (dfm_singleRegion)
 * observed data (sfpca_dfm.R)
 
-Observed_spaghetti_group.pdf as Figure 1a; 
+  - Observed_spaghetti_group.pdf as Figure 1a; 
 
-Observed_patient3.pdf as Figure 2a; 
+  - Observed_patient3.pdf as Figure 2a; 
 
-Observed_patient5.pdf as Figure 2b
+  - Observed_patient5.pdf as Figure 2b
 * results from using splinectomeR (figure_spline.R)
 
 splinectome_dfm_curves.pdf as Figure 1b
